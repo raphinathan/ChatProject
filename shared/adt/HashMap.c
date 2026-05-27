@@ -226,13 +226,50 @@ size_t HashMap_Size(const HashMap* _map)
 
 size_t HashMap_ForEach(const HashMap* _map, KeyValueActionFunction _action, void* _context)
 {
-    size_t i, count = 0;
-    if (!_map || !_action) return 0;
-    for (i = 0; i < _map->capacity; ++i) {
-        if (_map->buckets[i]) {
-            // iterate the bucket list, call _action for each kvp
+    size_t i = 0;
+    size_t count = 0;
+    ListItr itr = NULL;
+    ListItr end = NULL;
+    KeyValuePair* kvp = NULL;
+
+    /* 1. Standard safety checks */
+    if (NULL == _map || NULL == _action) 
+    {
+        return 0;
+    }
+
+    /* 2. Iterate through every bucket in the array */
+    for (i = 0; i < _map->capacity; ++i) 
+    {
+        if (NULL != _map->buckets[i]) 
+        {
+            /* 3. Setup iterators for the linked list at this bucket */
+            itr = ListItrBegin(_map->buckets[i]);
+            end = ListItrEnd(_map->buckets[i]);
+
+            /* 4. Traverse the linked list */
+            while (itr != end) 
+            {
+                kvp = (KeyValuePair*)ListItrGet(itr);
+                
+                if (NULL != kvp) 
+                {
+                    count++;
+                    
+                    /* Invoke the user's callback, passing the key, value, AND context. 
+                     * If the user's function returns 0, we immediately halt iteration 
+                     * and return the number of elements processed so far. */
+                    if (0 == _action(kvp->key, kvp->value, _context)) 
+                    {
+                        return count;
+                    }
+                }
+                
+                itr = ListItrNext(itr);
+            }
         }
     }
+
     return count;
 }
 
