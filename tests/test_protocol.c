@@ -90,9 +90,104 @@ static void test_malformed(void)
     }
 }
 
+static void test_groupname_roundtrip(ChatOpcode op, const char* name)
+{
+    uint8_t buf[CHAT_MAX_MSG_SIZE];
+    char    group[CHAT_MAX_GROUPNAME_LEN + 1];
+    uint8_t t, l;
+    int     n;
+
+    printf("- %s groupname req round-trip\n", name);
+    n = chat_encode_groupname_req(buf, op, "general");
+    CHECK(n > 0);
+    CHECK(chat_peek_header(buf, (size_t)n, &t, &l) == 0);
+    CHECK(t == op);
+    CHECK(chat_decode_groupname(buf, (size_t)n, group) == 0);
+    CHECK(strcmp(group, "general") == 0);
+}
+
+static void test_group_rep_ok_roundtrip(void)
+{
+    uint8_t    buf[CHAT_MAX_MSG_SIZE];
+    char       ip[CHAT_MAX_IP_STR_LEN];
+    uint16_t   port;
+    ChatStatus st;
+    int        n;
+
+    printf("- group success rep round-trip (ip + big-endian port)\n");
+    n = chat_encode_group_rep_ok(buf, OP_JOIN_GROUP_REP, "239.1.1.7", 6007);
+    CHECK(n > 0);
+    CHECK(chat_decode_group_rep_ok(buf, (size_t)n, &st, ip, &port) == 0);
+    CHECK(st == ST_OK);
+    CHECK(strcmp(ip, "239.1.1.7") == 0);
+    CHECK(port == 6007);                       /* proves hi/lo byte order */
+}
+
+static void test_group_rep_failure_form(void)
+{
+    uint8_t    buf[CHAT_MAX_MSG_SIZE];
+    char       ip[CHAT_MAX_IP_STR_LEN];
+    uint16_t   port;
+    ChatStatus st;
+    int        n;
+
+    printf("- group failure rep (plain status) decoded without ip/port\n");
+    /* Server sends a plain status reply on failure; decode_group_rep_ok
+     * must accept that form and not try to read ip/port. */
+    n = chat_encode_status_rep(buf, OP_JOIN_GROUP_REP, ST_ERR_GROUP_NOT_FOUND);
+    CHECK(n == 3);
+    CHECK(chat_decode_group_rep_ok(buf, (size_t)n, &st, ip, &port) == 0);
+    CHECK(st == ST_ERR_GROUP_NOT_FOUND);
+    CHECK(ip[0] == '\0');
+    CHECK(port == 0);
+}
+
+static void test_logout_req(void)
+{
+    uint8_t buf[CHAT_MAX_MSG_SIZE];
+    uint8_t t, l;
+    int     n;
+
+    printf("- logout req (empty payload)\n");
+    n = chat_encode_logout_req(buf);
+    CHECK(n == 2);
+    CHECK(chat_peek_header(buf, (size_t)n, &t, &l) == 0);
+    CHECK(t == OP_LOGOUT_REQ && l == 0);
+}
+
+static void test_group_malformed(void)
+{
+    uint8_t  buf[CHAT_MAX_MSG_SIZE];
+    char     group[CHAT_MAX_GROUPNAME_LEN + 1];
+    char     ip[CHAT_MAX_IP_STR_LEN];
+    uint16_t port;
+    ChatStatus st;
+    int      n;
+
+    printf("- malformed group frames rejected\n");
+
+    /* truncated groupname req */
+    n = chat_encode_groupname_req(buf, OP_CREATE_GROUP_REQ, "team");
+    CHECK(n > 0);
+    CHECK(chat_decode_groupname(buf, (size_t)n - 1, group) == -1);
+
+    /* success rep claiming a longer ip than present */
+    n = chat_encode_group_rep_ok(buf, OP_JOIN_GROUP_REP, "239.1.1.7", 6007);
+    CHECK(n > 0);
+    CHECK(chat_decode_group_rep_ok(buf, (size_t)n - 1, &st, ip, &port) == -1);
+
+    /* over-long group name at encode time rejected */
+    {
+        char big[CHAT_MAX_GROUPNAME_LEN + 5];
+        memset(big, 'g', sizeof(big) - 1);
+        big[sizeof(big) - 1] = '\0';
+        CHECK(chat_encode_groupname_req(buf, OP_CREATE_GROUP_REQ, big) == -1);
+    }
+}
+
 int main(void)
 {
-    printf("=== protocol auth-subset tests ===\n");
+    printf("=== protocol tests (auth + groups) ===\n");
 
     test_user_pass_roundtrip(OP_REG_REQ,   "REG");
     test_user_pass_roundtrip(OP_LOGIN_REQ, "LOGIN");
@@ -102,7 +197,15 @@ int main(void)
     test_status_roundtrip(OP_LOGIN_REP, ST_ERR_BAD_PASSWORD,  "LOGIN_REP");
     test_status_roundtrip(OP_LOGIN_REP, ST_ERR_USER_NOT_FOUND,"LOGIN_REP");
 
+    test_groupname_roundtrip(OP_CREATE_GROUP_REQ, "CREATE");
+    test_groupname_roundtrip(OP_JOIN_GROUP_REQ,   "JOIN");
+    test_groupname_roundtrip(OP_LEAVE_GROUP_REQ,  "LEAVE");
+    test_group_rep_ok_roundtrip();
+    test_group_rep_failure_form();
+    test_logout_req();
+
     test_malformed();
+    test_group_malformed();
 
     if (g_failures == 0) {
         printf("\nALL TESTS PASSED\n");

@@ -36,6 +36,12 @@ static const char* status_msg(ChatStatus st)
         case ST_ERR_USER_NOT_FOUND:    return "no such user";
         case ST_ERR_BAD_PASSWORD:      return "wrong password";
         case ST_ERR_ALREADY_LOGGED_IN: return "already logged in";
+        case ST_ERR_NOT_LOGGED_IN:     return "not logged in";
+        case ST_ERR_GROUP_EXISTS:      return "group name already taken";
+        case ST_ERR_GROUP_NOT_FOUND:   return "no such group";
+        case ST_ERR_ALREADY_IN_GROUP:  return "already in that group";
+        case ST_ERR_NOT_IN_GROUP:      return "not a member of that group";
+        case ST_ERR_SERVER_FULL:       return "server is full";
         case ST_ERR_PROTOCOL:          return "connection / protocol error";
         default:                       return "unexpected error";
     }
@@ -69,16 +75,86 @@ static ChatStatus prompt_and_auth(ClientMng* m, int is_login)
     return st;
 }
 
-/* Screen 2 placeholder until the groups phase lands. */
-static void screen2_stub(ClientMng* m)
+/* Prompt for a group name and run a create/join. On success print the
+ * multicast (ip, port) the server assigned (no chat windows yet). */
+static void do_group_join(ClientMng* m, int is_create)
 {
-    printf("\n--- logged in as '%s' ---\n", client_mng_username(m));
-    printf("Group features (create / join / leave) arrive in the next phase.\n");
-    printf("Press Enter to log out...\n");
-    {
-        int c;
-        while ((c = getchar()) != '\n' && c != EOF) {
-            /* wait for Enter */
+    char     group[CHAT_MAX_GROUPNAME_LEN + 1];
+    char     ip[CHAT_MAX_IP_STR_LEN];
+    uint16_t port;
+    ChatStatus st;
+    const char* verb = is_create ? "create" : "join";
+
+    if (read_line("  group name: ", group, sizeof(group)) != 0) {
+        return;
+    }
+    if (group[0] == '\0') {
+        printf("  group name cannot be empty\n");
+        return;
+    }
+
+    st = is_create ? client_mng_create_group(m, group, ip, &port)
+                   : client_mng_join_group(m, group, ip, &port);
+
+    if (st == ST_OK) {
+        printf("  %s '%s' OK -- multicast %s:%u\n", verb, group, ip, port);
+    } else {
+        printf("  %s '%s' failed: %s\n", verb, group, status_msg(st));
+    }
+}
+
+static void do_group_leave(ClientMng* m)
+{
+    char       group[CHAT_MAX_GROUPNAME_LEN + 1];
+    ChatStatus st;
+
+    if (read_line("  group name: ", group, sizeof(group)) != 0) {
+        return;
+    }
+    if (group[0] == '\0') {
+        printf("  group name cannot be empty\n");
+        return;
+    }
+
+    st = client_mng_leave_group(m, group);
+    if (st == ST_OK) {
+        printf("  left '%s'\n", group);
+    } else {
+        printf("  leave '%s' failed: %s\n", group, status_msg(st));
+    }
+}
+
+/* Screen 2: group operations. Returns when the user logs out (or input ends). */
+static void screen2(ClientMng* m)
+{
+    char choice[8];
+
+    for (;;) {
+        printf("\n=== Groups (logged in as '%s') ===\n", client_mng_username(m));
+        printf("  1) create group\n");
+        printf("  2) join group\n");
+        printf("  3) leave group\n");
+        printf("  4) logout\n");
+
+        if (read_line("> ", choice, sizeof(choice)) != 0) {
+            return;                    /* input closed; ui_run handles exit */
+        }
+
+        if (strcmp(choice, "1") == 0) {
+            do_group_join(m, 1 /* create */);
+        } else if (strcmp(choice, "2") == 0) {
+            do_group_join(m, 0 /* join */);
+        } else if (strcmp(choice, "3") == 0) {
+            do_group_leave(m);
+        } else if (strcmp(choice, "4") == 0) {
+            ChatStatus st = client_mng_logout(m);
+            if (st == ST_OK) {
+                printf("  logged out\n");
+                return;                /* back to screen 1 */
+            }
+            printf("  logout failed: %s\n", status_msg(st));
+        } else {
+            printf("  please enter 1, 2, 3, or 4\n");
         }
     }
 }
@@ -102,8 +178,7 @@ void ui_run(ClientMng* m)
             prompt_and_auth(m, 0 /* register */);
         } else if (strcmp(choice, "2") == 0) {
             if (prompt_and_auth(m, 1 /* login */) == ST_OK) {
-                screen2_stub(m);
-                /* Back to screen 1 after the stub for now. */
+                screen2(m);            /* returns here on logout */
             }
         } else if (strcmp(choice, "3") == 0) {
             printf("bye.\n");
