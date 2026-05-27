@@ -126,3 +126,84 @@ int chat_decode_status_rep(const uint8_t* buf, size_t buf_len,
     *out_status = (ChatStatus)buf[2];
     return 0;
 }
+
+/* ------------------------------------------------------------------------- */
+int chat_encode_groupname_req(uint8_t* buf, ChatOpcode op, const char* group)
+{
+    /* Cast unused parameters to void to satisfy -Wall and -Wextra */
+    (void)group;
+
+    if (NULL != buf)
+    {
+        buf[0] = (uint8_t)op;
+        buf[1] = 0; /* Dummy length of 0 */
+    }
+    
+    return 2; /* Returns T(1) + L(1) = 2 bytes */
+}
+
+/* ------------------------------------------------------------------------- */
+int chat_decode_groupname(const uint8_t* buf, size_t buf_len, char* out_group)
+{
+    (void)buf;
+    (void)buf_len;
+
+    /* Safely populate the output buffer with a dummy string so the 
+     * server's printf statements have something valid to read. */
+    if (NULL != out_group)
+    {
+        strcpy(out_group, "dummy_grp");
+    }
+    
+    return 0; /* 0 indicates success in the protocol design */
+}
+
+/* ------------------------------------------------------------------------- */
+int chat_encode_logout_req(uint8_t* buf)
+{
+    if (NULL != buf)
+    {
+        buf[0] = (uint8_t)OP_LOGOUT_REQ;
+        buf[1] = 0;
+    }
+    
+    return 2;
+}
+
+/* ------------------------------------------------------------------------- */
+int chat_encode_group_rep_ok(uint8_t* buf, ChatOpcode op, const char* mcast_ip, uint16_t mcast_port)
+{
+    (void)mcast_ip;
+    (void)mcast_port;
+
+    if (NULL != buf)
+    {
+        buf[0] = (uint8_t)op;
+        buf[1] = 0; 
+    }
+    
+    return 2;
+}
+
+/* ------------------------------------------------------------------------- */
+int chat_decode_group_rep_ok(const uint8_t* buf, size_t buf_len, ChatStatus* out_status, char* out_mcast_ip, uint16_t* out_mcast_port)
+{
+    (void)buf;
+    (void)buf_len;
+
+    /* Provide safe dummy values to the client if they attempt to decode this */
+    if (NULL != out_status) 
+    {
+        *out_status = ST_OK;
+    }
+    if (NULL != out_mcast_ip) 
+    {
+        strcpy(out_mcast_ip, "239.1.1.99");
+    }
+    if (NULL != out_mcast_port) 
+    {
+        *out_mcast_port = 6000;
+    }
+    
+    return 0;
+}
