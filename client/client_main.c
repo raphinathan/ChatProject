@@ -4,6 +4,8 @@
 #include "protocol.h"
 #include "ui.h"
 
+//client_main.c      ← entry point: read server IP, create manager, run UI
+
 int main(int argc, char** argv)
 {
     const char* server_ip = (argc > 1) ? argv[1] : "127.0.0.1";

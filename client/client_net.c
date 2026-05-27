@@ -8,7 +8,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-
+/*raw TCP: connect, send all bytes, receive one message*/
 /* ------------------------------------------------------------------------- */
 int client_net_connect(const char* ip, uint16_t port)
 {

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* ← "do a register/login": owns the socket + login state*/
 struct ClientMng {
     int      sockfd;
     char     server_ip[CHAT_MAX_IP_STR_LEN];
@@ -21,7 +22,7 @@ ClientMng* client_mng_create(const char* server_ip, uint16_t port)
         return NULL;
     }
 
-    m = calloc(1, sizeof(*m));
+    m = calloc(1, sizeof(*m)); /* why calloc? because it zeroes the memory, so we don't have to manually set all fields to zero/NULL. It's a common practice to use calloc when you want to initialize a struct with default values (like 0 for integers and NULL for pointers). */
     if (!m) {
         return NULL;
     }

@@ -3,7 +3,8 @@
 #include <string.h>
 
 /* =========================================================================
- *  TLV codec - auth subset (REG/LOGIN req + status rep).
+ * turns a request into bytes / bytes into a result
+ * TLV codec - auth subset (REG/LOGIN req + status rep).
  *
  *  Frame:   [T:1][L:1][payload:L]
  *  Sub-TLV: [Li:1][Vi:Li]   (every field, fixed or variable, is wrapped)
