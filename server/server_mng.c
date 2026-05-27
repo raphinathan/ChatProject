@@ -59,8 +59,12 @@ int ServerMng_HandleMessage(int _sockfd, const uint8_t* _msg, size_t _len, void*
              * the rest of the switch statement. */
             {
                 uint8_t repBuf[CHAT_MAX_MSG_SIZE];
-                size_t repLen = chat_encode_status_rep(repBuf, OP_LOGOUT_REP, ST_OK);
-                send(_sockfd, repBuf, repLen, 0);
+                int repLen = chat_encode_status_rep(repBuf, OP_LOGOUT_REP, ST_OK);
+                if (repLen > 0) 
+                {
+                    send(_sockfd, repBuf, (size_t)repLen, 0);
+                }
+                
             }
             break;
             

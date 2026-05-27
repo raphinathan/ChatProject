@@ -33,10 +33,7 @@ ADT_SRC := shared/adt/HashMap.c \
 # ---- per-binary sources -----------------------------------------------------
 SERVER_SRC := server/server_main.c \
               server/server_mng.c \
-              server/server_net.c \
-              server/user_mng.c \
-              server/group_mng.c \
-              server/free_mc_queue.c
+              server/server_net.c
 
 # client_groups_mng.c joins in Phase 5 (group windows); not part of auth slice.
 CLIENT_SRC := client/client_main.c \

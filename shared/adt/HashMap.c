@@ -1,6 +1,6 @@
 #include <stdlib.h> /* malloc, calloc, free */
-#include "./inc/HashMap.h"
-#include "./inc/new_gen_dlist.h"
+#include "HashMap.h"
+#include "gen_dlist.h"
 
 /* --- Internal Structures --- */
 struct HashMap
@@ -222,6 +222,18 @@ size_t HashMap_Size(const HashMap* _map)
         return 0;
     }
     return _map->size;
+}
+
+size_t HashMap_ForEach(const HashMap* _map, KeyValueActionFunction _action, void* _context)
+{
+    size_t i, count = 0;
+    if (!_map || !_action) return 0;
+    for (i = 0; i < _map->capacity; ++i) {
+        if (_map->buckets[i]) {
+            // iterate the bucket list, call _action for each kvp
+        }
+    }
+    return count;
 }
 
 /* --- Helper Function Definitions --- */

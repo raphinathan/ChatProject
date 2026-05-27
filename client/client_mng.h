@@ -22,6 +22,14 @@ void       client_mng_destroy(ClientMng** pm);
  * on any transport / encoding failure. */
 ChatStatus client_mng_register(ClientMng* m, const char* user, const char* pass);
 ChatStatus client_mng_login   (ClientMng* m, const char* user, const char* pass);
+ChatStatus client_mng_logout  (ClientMng* m);
+
+/* Group requests. */
+ChatStatus client_mng_create_group(ClientMng* m, const char* group,
+                                   char* out_ip, uint16_t* out_port);
+ChatStatus client_mng_join_group  (ClientMng* m, const char* group,
+                                   char* out_ip, uint16_t* out_port);
+ChatStatus client_mng_leave_group (ClientMng* m, const char* group);
 
 /* True once a login has succeeded. */
 int         client_mng_is_logged_in(const ClientMng* m);

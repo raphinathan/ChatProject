@@ -4,7 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>W
+#include <unistd.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -37,7 +38,8 @@ static void ProcessBuffer(ClientState* _client, OnMessageFn _onMsg, void* _ctx);
 
 /* --- Main Functions --- */
 
-int ServerNet_Run(uint16_t _port, OnMessageFn _onMsg, OnDisconnectFn _onDisc, void* _ctx)
+int ServerNet_Run(uint16_t _port, OnMessageFn _onMsg, OnDisconnectFn _onDisc,
+                  void* _ctx, const volatile sig_atomic_t* _keepRunning)
 {
     int listenFd = -1;
     int maxFd = 0;
@@ -46,7 +48,7 @@ int ServerNet_Run(uint16_t _port, OnMessageFn _onMsg, OnDisconnectFn _onDisc, vo
     /* fd_set is a bit-array used by select() to know which sockets to monitor. */
     fd_set masterSet; 
     fd_set readSet;
-    ClientState clients[MAX_CLIENTS];
+    static ClientState clients[MAX_CLIENTS];
 
     /* Initialize all client slots to -1 (empty) */
     for (i = 0; i < MAX_CLIENTS; ++i)
@@ -68,15 +70,19 @@ int ServerNet_Run(uint16_t _port, OnMessageFn _onMsg, OnDisconnectFn _onDisc, vo
 
     printf("Server listening on port %d...\n", _port);
 
-    while (1)
+    while (*_keepRunning)
     {
-        /* select() modifies the set passed into it. We must pass a copy (readSet) 
+        /* select() modifies the set passed into it. We must pass a copy (readSet)
          * so we don't lose our master list of connected clients. */
         readSet = masterSet;
-        
+
         /* Blocks until at least one FD in readSet is ready for reading */
         if (-1 == select(maxFd + 1, &readSet, NULL, NULL, NULL))
         {
+            if (errno == EINTR)
+            {
+                continue; /* signal fired — re-check *_keepRunning at top of loop */
+            }
             perror("select failed");
             break;
         }
