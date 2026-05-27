@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wsl -e bash -lc 'cd /mnt/c/GIT/ChatProject/ChatProject && which gcc make && gcc --version | head -1 && make --version | head -1')",
+      "Bash(wsl -e bash -lc 'cd /mnt/c/GIT/ChatProject/ChatProject && make clean >/dev/null 2>&1; echo \"=== build test_protocol ===\" && make test_protocol && echo \"=== build client + mock_server ===\" && make client mock_server')",
+      "Bash(wsl -e bash -lc 'cd /mnt/c/GIT/ChatProject/ChatProject && make clean >/dev/null 2>&1; echo \"=== test_protocol ===\" && make test_protocol && echo \"=== client + mock_server ===\" && make client mock_server && echo \"=== run test_protocol ===\" && ./bin/test_protocol')",
+      "Bash(wsl -e bash -lc 'cd /mnt/c/GIT/ChatProject/ChatProject && ./bin/mock_server > /tmp/mock.log 2>&1 & MOCK=$!; sleep 0.3; printf \"1\\\\nalice\\\\nsecret\\\\n1\\\\nalice\\\\nsecret\\\\n2\\\\nalice\\\\nwrong\\\\n2\\\\nalice\\\\nsecret\\\\n\\\\n3\\\\n\" | ./bin/client 127.0.0.1; echo \"===== MOCK SERVER LOG =====\"; cat /tmp/mock.log; kill $MOCK 2>/dev/null')",
+      "Bash(wsl -e bash -lc 'cd /mnt/c/GIT/ChatProject/ChatProject && make mock_server >/dev/null && ./bin/mock_server > /tmp/mock.log 2>&1 & MOCK=$!; sleep 0.3; printf \"1\\\\nalice\\\\nsecret\\\\n1\\\\nalice\\\\nsecret\\\\n2\\\\nalice\\\\nwrong\\\\n2\\\\nalice\\\\nsecret\\\\n\\\\n3\\\\n\" | ./bin/client 127.0.0.1 >/dev/null; sleep 0.2; echo \"===== MOCK SERVER LOG =====\"; cat /tmp/mock.log; kill $MOCK 2>/dev/null')",
+      "Bash(wsl -e bash -lc 'cd /mnt/c/GIT/ChatProject/ChatProject && make mock_server >/dev/null 2>&1 && echo \"built.\" && ./bin/mock_server > /tmp/mock.log 2>&1 & sleep 0.6; MOCK=$\\(pgrep -f bin/mock_server\\); printf \"1\\\\nalice\\\\nsecret\\\\n1\\\\nalice\\\\nsecret\\\\n2\\\\nalice\\\\nwrong\\\\n2\\\\nalice\\\\nsecret\\\\n\\\\n3\\\\n\" | ./bin/client 127.0.0.1 >/dev/null 2>&1; sleep 0.2; echo \"===== MOCK SERVER LOG =====\"; cat /tmp/mock.log; kill $MOCK 2>/dev/null')",
+      "Bash(wsl -e bash -lc 'cd /mnt/c/GIT/ChatProject/ChatProject && make mock_server client test_protocol 2>&1 | tail -3')",
+      "Bash(wsl -e bash -lc ' *)"
+    ]
+  }
+}
