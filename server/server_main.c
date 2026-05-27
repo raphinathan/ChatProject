@@ -26,21 +26,25 @@ int main(void)
      * Now, Ctrl+C won't immediately kill the program. It sets the flag, allowing 
      * ServerNet_Run to eventually exit gracefully. */
     struct sigaction sa;
+    int exit_code;
     sa.sa_handler = SigIntHandler;
     sigemptyset(&sa.sa_mask);       /* don't block any other signals during handler */
     sa.sa_flags = 0;                /* no SA_RESTART: we WANT select() to return EINTR */
     sigaction(SIGINT, &sa, NULL);
 
-    if (0 == ServerMng_Init())
+    if (1 == ServerMng_Init())
     {
         return EXIT_FAILURE;
     }
 
     /* Blocks here until ServerNet_Run returns (which happens if select() fails, 
      * or if we modified ServerNet_Run to check g_keepRunning). */
-ServerNet_Run(CHAT_TCP_PORT, ServerMng_HandleMessage, ServerMng_OnDisconnect,
+    exit_code = ServerNet_Run(CHAT_TCP_PORT, ServerMng_HandleMessage, ServerMng_OnDisconnect,
               NULL, &g_keepRunning);
-
+    if (exit_code != 0) 
+    {
+        fprintf(stderr, "network loop exited with error\n");
+    }
     /* This will only execute if the network loop breaks, allowing you 
      * to safely call HashMap_Destroy inside ServerMng_Destroy. */
     ServerMng_Destroy();

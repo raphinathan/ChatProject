@@ -44,6 +44,7 @@ int ServerNet_Run(uint16_t _port, OnMessageFn _onMsg, OnDisconnectFn _onDisc,
     int listenFd = -1;
     int maxFd = 0;
     int i = 0;
+    int cleanExit = 1;
     
     /* fd_set is a bit-array used by select() to know which sockets to monitor. */
     fd_set masterSet; 
@@ -84,6 +85,7 @@ int ServerNet_Run(uint16_t _port, OnMessageFn _onMsg, OnDisconnectFn _onDisc,
                 continue; /* signal fired — re-check *_keepRunning at top of loop */
             }
             perror("select failed");
+            cleanExit = 0;
             break;
         }
 
@@ -104,7 +106,8 @@ int ServerNet_Run(uint16_t _port, OnMessageFn _onMsg, OnDisconnectFn _onDisc,
     }
 
     close(listenFd);
-    return -1;
+    return cleanExit ? 0 : -1;
+
 }
 
 /* --- Helper Function Definitions --- */
@@ -193,6 +196,11 @@ static void HandleClientData(ClientState* _client, fd_set* _masterSet, OnMessage
     
     /* Calculate remaining space to prevent buffer overflow */
     size_t spaceLeft = RECV_BUFFER_SIZE - _client->len;
+    if (spaceLeft == 0) 
+    { 
+        /* protocol error: drop client */ 
+        return; 
+    }
 
     /* Read directly into the buffer, offset by whatever data is already there */
     bytesRead = recv(_client->fd, _client->buffer + _client->len, spaceLeft, 0);

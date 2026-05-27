@@ -33,7 +33,8 @@ ADT_SRC := shared/adt/HashMap.c \
 # ---- per-binary sources -----------------------------------------------------
 SERVER_SRC := server/server_main.c \
               server/server_mng.c \
-              server/server_net.c
+              server/server_net.c \
+              server/user_mng.c
 
 # client_groups_mng.c joins in Phase 5 (group windows); not part of auth slice.
 CLIENT_SRC := client/client_main.c \
@@ -64,7 +65,7 @@ TEST_OBJ     := $(call obj,$(TEST_SRC))
 # -----------------------------------------------------------------------------
 .PHONY: all clean server client chat_sender chat_receiver mock_server test_protocol
 
-all: server client chat_sender chat_receiver
+all: server client
 
 # short-name aliases
 server:        $(BIN)/server
