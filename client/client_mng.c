@@ -103,6 +103,100 @@ ChatStatus client_mng_login(ClientMng* m, const char* user, const char* pass)
 }
 
 /* ------------------------------------------------------------------------- */
+ChatStatus client_mng_logout(ClientMng* m)
+{
+    uint8_t    buf[CHAT_MAX_MSG_SIZE];
+    size_t     rlen;
+    ChatStatus status;
+    int        n;
+
+    if (!m) {
+        return ST_ERR_PROTOCOL;
+    }
+    n = chat_encode_logout_req(buf);
+    if (n < 0 || client_net_send_all(m->sockfd, buf, (size_t)n) != 0) {
+        return ST_ERR_PROTOCOL;
+    }
+    if (client_net_recv_msg(m->sockfd, buf, &rlen) != 0) {
+        return ST_ERR_PROTOCOL;
+    }
+    if (chat_decode_status_rep(buf, rlen, &status) != 0) {
+        return ST_ERR_PROTOCOL;
+    }
+    if (status == ST_OK) {
+        m->logged_in  = 0;
+        m->username[0] = '\0';
+    }
+    return status;
+}
+
+/* Send a CREATE/JOIN request and decode the (ip, port)-bearing reply. */
+static ChatStatus do_group_join(ClientMng* m, ChatOpcode op, const char* group,
+                                char* out_ip, uint16_t* out_port)
+{
+    uint8_t    buf[CHAT_MAX_MSG_SIZE];
+    size_t     rlen;
+    ChatStatus status;
+    int        n;
+
+    n = chat_encode_groupname_req(buf, op, group);
+    if (n < 0 || client_net_send_all(m->sockfd, buf, (size_t)n) != 0) {
+        return ST_ERR_PROTOCOL;
+    }
+    if (client_net_recv_msg(m->sockfd, buf, &rlen) != 0) {
+        return ST_ERR_PROTOCOL;
+    }
+    if (chat_decode_group_rep_ok(buf, rlen, &status, out_ip, out_port) != 0) {
+        return ST_ERR_PROTOCOL;
+    }
+    return status;
+}
+
+/* ------------------------------------------------------------------------- */
+ChatStatus client_mng_create_group(ClientMng* m, const char* group,
+                                   char* out_ip, uint16_t* out_port)
+{
+    if (!m || !group || !out_ip || !out_port) {
+        return ST_ERR_PROTOCOL;
+    }
+    return do_group_join(m, OP_CREATE_GROUP_REQ, group, out_ip, out_port);
+}
+
+/* ------------------------------------------------------------------------- */
+ChatStatus client_mng_join_group(ClientMng* m, const char* group,
+                                 char* out_ip, uint16_t* out_port)
+{
+    if (!m || !group || !out_ip || !out_port) {
+        return ST_ERR_PROTOCOL;
+    }
+    return do_group_join(m, OP_JOIN_GROUP_REQ, group, out_ip, out_port);
+}
+
+/* ------------------------------------------------------------------------- */
+ChatStatus client_mng_leave_group(ClientMng* m, const char* group)
+{
+    uint8_t    buf[CHAT_MAX_MSG_SIZE];
+    size_t     rlen;
+    ChatStatus status;
+    int        n;
+
+    if (!m || !group) {
+        return ST_ERR_PROTOCOL;
+    }
+    n = chat_encode_groupname_req(buf, OP_LEAVE_GROUP_REQ, group);
+    if (n < 0 || client_net_send_all(m->sockfd, buf, (size_t)n) != 0) {
+        return ST_ERR_PROTOCOL;
+    }
+    if (client_net_recv_msg(m->sockfd, buf, &rlen) != 0) {
+        return ST_ERR_PROTOCOL;
+    }
+    if (chat_decode_status_rep(buf, rlen, &status) != 0) {
+        return ST_ERR_PROTOCOL;
+    }
+    return status;
+}
+
+/* ------------------------------------------------------------------------- */
 int client_mng_is_logged_in(const ClientMng* m)
 {
     return m ? m->logged_in : 0;

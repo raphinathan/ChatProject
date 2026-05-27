@@ -130,80 +130,146 @@ int chat_decode_status_rep(const uint8_t* buf, size_t buf_len,
 /* ------------------------------------------------------------------------- */
 int chat_encode_groupname_req(uint8_t* buf, ChatOpcode op, const char* group)
 {
-    /* Cast unused parameters to void to satisfy -Wall and -Wextra */
-    (void)group;
+    size_t glen, payload;
 
-    if (NULL != buf)
-    {
-        buf[0] = (uint8_t)op;
-        buf[1] = 0; /* Dummy length of 0 */
+    if (!buf || !group) {
+        return -1;
     }
-    
-    return 2; /* Returns T(1) + L(1) = 2 bytes */
+    glen = strlen(group);
+    if (glen > CHAT_MAX_GROUPNAME_LEN) {
+        return -1;
+    }
+
+    /* payload = [Lg][group] */
+    payload = 1 + glen;
+    if (payload > CHAT_MAX_PAYLOAD) {
+        return -1;
+    }
+
+    buf[0] = (uint8_t)op;
+    buf[1] = (uint8_t)payload;
+    buf[2] = (uint8_t)glen;
+    memcpy(&buf[3], group, glen);
+
+    return (int)(2 + payload);
 }
 
 /* ------------------------------------------------------------------------- */
 int chat_decode_groupname(const uint8_t* buf, size_t buf_len, char* out_group)
 {
-    (void)buf;
-    (void)buf_len;
+    size_t payload, glen;
 
-    /* Safely populate the output buffer with a dummy string so the 
-     * server's printf statements have something valid to read. */
-    if (NULL != out_group)
-    {
-        strcpy(out_group, "dummy_grp");
+    if (!buf || !out_group || buf_len < 2) {
+        return -1;
     }
-    
-    return 0; /* 0 indicates success in the protocol design */
+
+    payload = buf[1];
+    if (2 + payload > buf_len) {
+        return -1;
+    }
+    if (payload < 1) {                 /* need at least [Lg] */
+        return -1;
+    }
+
+    glen = buf[2];
+    if (glen > CHAT_MAX_GROUPNAME_LEN || 3 + glen > buf_len) {
+        return -1;
+    }
+    memcpy(out_group, &buf[3], glen);
+    out_group[glen] = '\0';
+
+    return 0;
 }
 
 /* ------------------------------------------------------------------------- */
 int chat_encode_logout_req(uint8_t* buf)
 {
-    if (NULL != buf)
-    {
-        buf[0] = (uint8_t)OP_LOGOUT_REQ;
-        buf[1] = 0;
+    if (!buf) {
+        return -1;
     }
-    
+    buf[0] = (uint8_t)OP_LOGOUT_REQ;
+    buf[1] = 0;                        /* empty payload */
     return 2;
 }
 
 /* ------------------------------------------------------------------------- */
-int chat_encode_group_rep_ok(uint8_t* buf, ChatOpcode op, const char* mcast_ip, uint16_t mcast_port)
+int chat_encode_group_rep_ok(uint8_t* buf, ChatOpcode op,
+                             const char* mcast_ip, uint16_t mcast_port)
 {
-    (void)mcast_ip;
-    (void)mcast_port;
+    size_t iplen, payload;
 
-    if (NULL != buf)
-    {
-        buf[0] = (uint8_t)op;
-        buf[1] = 0; 
+    if (!buf || !mcast_ip) {
+        return -1;
     }
-    
-    return 2;
+    iplen = strlen(mcast_ip);
+    if (iplen >= CHAT_MAX_IP_STR_LEN) {
+        return -1;
+    }
+
+    /* payload = [status=OK][Lip][ip][Lport=2][port_hi][port_lo] */
+    payload = 1 + (1 + iplen) + (1 + 2);
+    if (payload > CHAT_MAX_PAYLOAD) {
+        return -1;
+    }
+
+    buf[0] = (uint8_t)op;
+    buf[1] = (uint8_t)payload;
+    buf[2] = (uint8_t)ST_OK;
+    buf[3] = (uint8_t)iplen;
+    memcpy(&buf[4], mcast_ip, iplen);
+    buf[4 + iplen] = 2;                            /* port sub-TLV length */
+    buf[5 + iplen] = (uint8_t)(mcast_port >> 8);   /* big-endian */
+    buf[6 + iplen] = (uint8_t)(mcast_port & 0xFF);
+
+    return (int)(2 + payload);
 }
 
 /* ------------------------------------------------------------------------- */
-int chat_decode_group_rep_ok(const uint8_t* buf, size_t buf_len, ChatStatus* out_status, char* out_mcast_ip, uint16_t* out_mcast_port)
+int chat_decode_group_rep_ok(const uint8_t* buf, size_t buf_len,
+                             ChatStatus* out_status,
+                             char* out_mcast_ip, uint16_t* out_mcast_port)
 {
-    (void)buf;
-    (void)buf_len;
+    size_t pos, payload, iplen, portlen;
 
-    /* Provide safe dummy values to the client if they attempt to decode this */
-    if (NULL != out_status) 
-    {
-        *out_status = ST_OK;
+    if (!buf || !out_status || !out_mcast_ip || !out_mcast_port || buf_len < 3) {
+        return -1;
     }
-    if (NULL != out_mcast_ip) 
-    {
-        strcpy(out_mcast_ip, "239.1.1.99");
+
+    payload = buf[1];
+    if (2 + payload > buf_len || payload < 1) {
+        return -1;
     }
-    if (NULL != out_mcast_port) 
-    {
-        *out_mcast_port = 6000;
+
+    *out_status = (ChatStatus)buf[2];
+
+    /* Failure form: server sent a plain status reply (payload is just status). */
+    if (*out_status != ST_OK || payload == 1) {
+        out_mcast_ip[0] = '\0';
+        *out_mcast_port = 0;
+        return 0;
     }
-    
+
+    /* Success form: [status][Lip][ip][Lport=2][hi][lo] */
+    pos = 3;
+    if (pos >= buf_len) {
+        return -1;
+    }
+    iplen = buf[pos++];
+    if (iplen >= CHAT_MAX_IP_STR_LEN || pos + iplen > buf_len) {
+        return -1;
+    }
+    memcpy(out_mcast_ip, &buf[pos], iplen);
+    out_mcast_ip[iplen] = '\0';
+    pos += iplen;
+
+    if (pos >= buf_len) {
+        return -1;
+    }
+    portlen = buf[pos++];
+    if (portlen != 2 || pos + 2 > buf_len) {
+        return -1;
+    }
+    *out_mcast_port = (uint16_t)((buf[pos] << 8) | buf[pos + 1]);
+
     return 0;
 }
