@@ -1,8 +1,8 @@
-/* server/user_mng.c */
-
 #include "user_mng.h"
 #include "user.h"
+#include "hash_utils.h"
 #include "../shared/adt/HashMap.h"
+#include "../shared/adt/gen_dlist.h" /* For the iterator functions */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,8 +22,6 @@ struct UserMng
 
 /* --- Helper Function Declarations --- */
 
-static size_t HashStringDjb2(void* _key);
-static int KeysAreEqual(void* _firstKey, void* _secondKey);
 static void DestroyUserCallback(void* _value);
 
 /* --- Main Functions --- */
@@ -40,7 +38,7 @@ UserMng* UserMng_Create(void)
     }
 
     /* Anticipating 100 max users. The HashMap will automatically round up to a prime. */
-    mng->usersByName = HashMap_Create(100, HashStringDjb2, KeysAreEqual);
+    mng->usersByName = HashMap_Create(100, HashStringDjb2, StringKeysEqual);
     if (NULL == mng->usersByName)
     {
         free(mng);
@@ -167,73 +165,144 @@ ChatStatus UserMng_Login(UserMng* _mng, const char* _username, const char* _pass
     return ST_OK;
 }
 
-ChatStatus UserMng_Logout(UserMng* _mng, int _sockfd)
+ChatStatus UserMng_Logout(UserMng* _mng, int _sockfd, LeaveGroupCallback _leaveCb, void* _ctx)
 {
     User* user = NULL;
+    ListItr itr = NULL;
+    ListItr end = NULL;
+    char* currentName = NULL;
 
-    if (NULL == _mng || 0 > _sockfd || _sockfd >= FD_SETSIZE)
+    if (NULL == _mng || 0 > _sockfd || _sockfd >= FD_SETSIZE ) 
     {
         return ST_ERR_PROTOCOL;
     }
 
     user = _mng->activeSockets[_sockfd];
+    if (NULL == user) 
+    {
+        return ST_ERR_NOT_LOGGED_IN;
+    }
+
+    /* O(k) cleanup: Pop every group from the list using Iterators */
+    itr = ListItrBegin(user->joinedGroups);
+    end = ListItrEnd(user->joinedGroups);
     
+    while (itr != end)
+    {
+        currentName = (char*)ListItrRemove(itr);
+        if (NULL != currentName)
+        {
+            if (NULL != _leaveCb)
+            {
+                /* Notify GroupMng to decrement the member_count */
+                _leaveCb(currentName, _ctx); 
+            }
+            free(currentName);
+        }
+        
+        /* Reset iterator to the new head of the list */
+        itr = ListItrBegin(user->joinedGroups);
+        end = ListItrEnd(user->joinedGroups);
+    }
+
+    user->state = USER_OFFLINE;
+    user->socketFd = -1;
+    _mng->activeSockets[_sockfd] = NULL;
+
+    return ST_OK;
+}
+
+void UserMng_Disconnect(UserMng* _mng, int _sockfd, LeaveGroupCallback _leaveCb, void* _ctx)
+{
+    (void)UserMng_Logout(_mng, _sockfd, _leaveCb, _ctx);
+}
+
+ChatStatus UserMng_JoinGroup(UserMng* _mng, int _sockfd, const char* _groupName)
+{
+    User* user = NULL;
+    char* groupNameCopy = NULL;
+    ListItr itr = NULL;
+    ListItr end = NULL;
+
+    if (NULL == _mng || 0 > _sockfd || NULL == _groupName)
+    {
+        return ST_ERR_PROTOCOL;
+    }
+
+    user = _mng->activeSockets[_sockfd];
     if (NULL == user)
     {
         return ST_ERR_NOT_LOGGED_IN;
     }
 
-    /* Update State and clear Secondary Index */
-    user->state = USER_OFFLINE;
-    user->socketFd = -1;
-    _mng->activeSockets[_sockfd] = NULL;
+    /* Reject duplicate membership */
+    itr = ListItrBegin(user->joinedGroups);
+    end = ListItrEnd(user->joinedGroups);
+    while (itr != end)
+    {
+        if (0 == strcmp((char*)ListItrGet(itr), _groupName))
+        {
+            return ST_ERR_ALREADY_IN_GROUP;
+        }
+        itr = ListItrNext(itr);
+    }
 
-    /* (Phase 3: We will also iterate through joinedGroups here to leave them) */
+    /* Allocate a fresh string for the Linked List to own */
+    groupNameCopy = (char*)malloc(strlen(_groupName) + 1);
+    if (NULL == groupNameCopy) 
+    {
+        return ST_ERR_SERVER_FULL;
+    }
+    
+    strcpy(groupNameCopy, _groupName);
+
+    /* Safely push to list */
+    if (NULL == ListPushTail(user->joinedGroups, groupNameCopy))
+    {
+        free(groupNameCopy);
+        return ST_ERR_SERVER_FULL;
+    }
 
     return ST_OK;
 }
 
-void UserMng_Disconnect(UserMng* _mng, int _sockfd)
+ChatStatus UserMng_LeaveGroup(UserMng* _mng, int _sockfd, const char* _groupName)
 {
-    /* Disconnect does exactly what logout does, but silently. */
-    (void)UserMng_Logout(_mng, _sockfd);  /* not logged in = nothing to do */
+    User* user = NULL;
+    ListItr itr = NULL;
+    ListItr end = NULL;
+    char* currentName = NULL;
+
+    if (NULL == _mng || 0 > _sockfd || NULL == _groupName) 
+    {
+        return ST_ERR_PROTOCOL;
+    }
+    
+    user = _mng->activeSockets[_sockfd];
+    if (NULL == user) 
+    {
+        return ST_ERR_NOT_LOGGED_IN;
+    }
+
+    itr = ListItrBegin(user->joinedGroups);
+    end = ListItrEnd(user->joinedGroups);
+
+    while (itr != end)
+    {
+        currentName = (char*)ListItrGet(itr);
+        if (NULL != currentName && 0 == strcmp(currentName, _groupName))
+        {
+            ListItrRemove(itr);
+            free(currentName);
+            return ST_OK;
+        }
+        itr = ListItrNext(itr);
+    }
+
+    return ST_ERR_NOT_IN_GROUP;
 }
 
 /* --- Helper Function Definitions --- */
-
-static size_t HashStringDjb2(void* _key)
-{
-    unsigned char* str = (unsigned char*)_key;
-    size_t hash = 5381;
-    int c = 0;
-
-    if (NULL == str) 
-    {
-        return 0;
-    }
-
-    while ((c = *str++)) 
-    {
-        hash = ((hash << 5) + hash) + (size_t)c; /* hash * 33 + c */
-    }
-
-    return hash;
-}
-
-static int KeysAreEqual(void* _firstKey, void* _secondKey)
-{
-    if (NULL == _firstKey || NULL == _secondKey) 
-    {
-        return 0;
-    }
-    
-    if (0 == strcmp((char*)_firstKey, (char*)_secondKey))
-    {
-        return 1;
-    }
-    
-    return 0;
-}
 
 static void DestroyUserCallback(void* _value)
 {

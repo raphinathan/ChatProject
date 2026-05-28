@@ -1,7 +1,7 @@
-/* server/server_mng.c (Updated Phase 2) */
-
 #include "server_mng.h"
 #include "user_mng.h"
+#include "free_mc_queue.h"
+#include "group_mng.h"
 #include "../shared/protocol.h"
 
 #include <stdio.h>
@@ -9,37 +9,67 @@
 
 /* Global singleton for the Management layer state */
 static UserMng* g_userMng = NULL;
+static GroupMng* g_groupMng = NULL;
+static FreeMcQueue* g_mcQueue = NULL;
 
 /* --- Helper Function Declarations --- */
-
 static void HandleRegisterReq(int _sockfd, const uint8_t* _msg, size_t _len);
 static void HandleLoginReq(int _sockfd, const uint8_t* _msg, size_t _len);
 static void HandleCreateGroupReq(int _sockfd, const uint8_t* _msg, size_t _len);
 static void HandleJoinGroupReq(int _sockfd, const uint8_t* _msg, size_t _len);
 static void HandleLeaveGroupReq(int _sockfd, const uint8_t* _msg, size_t _len);
 
+/* Wrapper to match the LeaveGroupCallback signature in UserMng */
+static void OnUserImplicitLeave(const char* _groupName, void* _ctx)
+{
+    GroupMng* mng = (GroupMng*)_ctx;
+    GroupMng_LeaveGroup(mng, _groupName);
+}
 /* --- Main Functions --- */
 
 int ServerMng_Init(void)
 {
+    g_mcQueue = FreeMcQueue_Create();
+    if (NULL == g_mcQueue)
+    {
+        return -1;
+    }
+
+    g_groupMng = GroupMng_Create(g_mcQueue);
+    if (NULL == g_groupMng)
+    {
+        FreeMcQueue_Destroy(&g_mcQueue);
+        return -1;
+    }
+
     g_userMng = UserMng_Create();
-    
     if (NULL == g_userMng)
     {
-        return 1; /* Init failed */
+        GroupMng_Destroy(&g_groupMng);
+        FreeMcQueue_Destroy(&g_mcQueue);
+        return -1;
     }
     
-    printf("ServerMng and UserMng Initialized.\n");
+    printf("Server Management Systems Fully Initialized.\n");
     return 0;
 }
 
 void ServerMng_Destroy(void)
 {
-    if (NULL != g_userMng)
+    if (NULL != g_userMng) 
     {
         UserMng_Destroy(&g_userMng);
     }
-    printf("ServerMng Destroyed.\n");
+    if (NULL != g_groupMng) 
+    {
+        GroupMng_Destroy(&g_groupMng);
+    }
+    if (NULL != g_mcQueue) 
+    {
+        FreeMcQueue_Destroy(&g_mcQueue);
+    }
+    
+    printf("Server Management Systems Destroyed.\n");
 }
 
 int ServerMng_HandleMessage(int _sockfd, const uint8_t* _msg, size_t _len, void* _ctx)
@@ -53,6 +83,7 @@ int ServerMng_HandleMessage(int _sockfd, const uint8_t* _msg, size_t _len, void*
     {
         return -1;
     }
+
     printf("Received Opcode 0x%02X from FD %d\n", type, _sockfd);
 
     switch ((ChatOpcode)type)
@@ -68,10 +99,15 @@ int ServerMng_HandleMessage(int _sockfd, const uint8_t* _msg, size_t _len, void*
         case OP_LOGOUT_REQ:
             {
                 uint8_t repBuf[CHAT_MAX_MSG_SIZE];
-                ChatStatus status = UserMng_Logout(g_userMng, _sockfd);
-                int repLen = chat_encode_status_rep(repBuf, OP_LOGOUT_REP, status);
-                
+                ChatStatus status;
+                int repLen = 0;
+
                 printf("  -> Logout requested for FD: %d\n", _sockfd);
+                
+                /* UserMng will auto-trigger OnUserImplicitLeave for every group they were in */
+                status = UserMng_Logout(g_userMng, _sockfd, OnUserImplicitLeave, g_groupMng);
+                
+                repLen = chat_encode_status_rep(repBuf, OP_LOGOUT_REP, status);
                 if (repLen > 0) 
                 {
                     send(_sockfd, repBuf, (size_t)repLen, 0);
@@ -104,7 +140,8 @@ void ServerMng_OnDisconnect(int _sockfd, void* _ctx)
     
     if (NULL != g_userMng)
     {
-        UserMng_Disconnect(g_userMng, _sockfd);
+        /* Triggers the exact same cleanup as a graceful logout */
+        UserMng_Disconnect(g_userMng, _sockfd, OnUserImplicitLeave, g_groupMng);
     }
     
     printf("ServerMng handled disconnect for FD %d.\n", _sockfd);
@@ -117,16 +154,19 @@ static void HandleRegisterReq(int _sockfd, const uint8_t* _msg, size_t _len)
     char user[CHAT_MAX_USERNAME_LEN + 1] = {0};
     char pass[CHAT_MAX_PASSWORD_LEN + 1] = {0};
     uint8_t repBuf[CHAT_MAX_MSG_SIZE];
-    size_t repLen = 0;
+    int repLen = 0;
     ChatStatus status;
 
     if (0 == chat_decode_user_pass(_msg, _len, user, pass))
     {
         printf("  -> Register requested for User: %s\n", user);
         status = UserMng_Register(g_userMng, user, pass);
-        
-        repLen = (size_t)chat_encode_status_rep(repBuf, OP_REG_REP, status);
-        send(_sockfd, repBuf, repLen, 0);
+
+        repLen = chat_encode_status_rep(repBuf, OP_REG_REP, status);
+        if (repLen > 0) 
+        { 
+            send(_sockfd, repBuf, (size_t)repLen, 0); 
+        }
     }
 }
 
@@ -135,51 +175,115 @@ static void HandleLoginReq(int _sockfd, const uint8_t* _msg, size_t _len)
     char user[CHAT_MAX_USERNAME_LEN + 1] = {0};
     char pass[CHAT_MAX_PASSWORD_LEN + 1] = {0};
     uint8_t repBuf[CHAT_MAX_MSG_SIZE];
-    size_t repLen = 0;
+    int repLen = 0;
     ChatStatus status;
 
     if (0 == chat_decode_user_pass(_msg, _len, user, pass))
     {
         printf("  -> Login requested for User: %s\n", user);
         status = UserMng_Login(g_userMng, user, pass, _sockfd);
-        
-        repLen = (size_t)chat_encode_status_rep(repBuf, OP_LOGIN_REP, status);
-        send(_sockfd, repBuf, repLen, 0);
+
+        repLen = chat_encode_status_rep(repBuf, OP_LOGIN_REP, status);
+        if (repLen > 0) 
+        { 
+            send(_sockfd, repBuf, (size_t)repLen, 0); 
+        }
     }
 }
 
-/* * Phase 1 Stubs remain intact for Group features until we build GroupMng 
- */
-
 static void HandleCreateGroupReq(int _sockfd, const uint8_t* _msg, size_t _len)
 {
-    char group[CHAT_MAX_GROUPNAME_LEN + 1] = {0};
+    char groupName[CHAT_MAX_GROUPNAME_LEN + 1] = {0};
     uint8_t repBuf[CHAT_MAX_MSG_SIZE];
-    size_t repLen = 0;
+    int repLen = 0;
+    ChatStatus status;
+    Group* newGroup = NULL;
 
-    chat_decode_groupname(_msg, _len, group);
-    repLen = (size_t)chat_encode_group_rep_ok(repBuf, OP_CREATE_GROUP_REP, "239.1.1.99", 6000);
-    send(_sockfd, repBuf, repLen, 0);
+    if (0 == chat_decode_groupname(_msg, _len, groupName))
+    {
+        printf("  -> Create Group requested: %s\n", groupName);
+
+        status = GroupMng_CreateGroup(g_groupMng, groupName, &newGroup);
+
+        if (ST_OK == status && NULL != newGroup)
+        {
+            UserMng_JoinGroup(g_userMng, _sockfd, groupName);
+            repLen = chat_encode_group_rep_ok(repBuf, OP_CREATE_GROUP_REP, newGroup->mcast_ip, newGroup->mcast_port);
+        }
+        else
+        {
+            repLen = chat_encode_status_rep(repBuf, OP_CREATE_GROUP_REP, status);
+        }
+        if (repLen > 0) 
+        { 
+            send(_sockfd, repBuf, (size_t)repLen, 0); 
+        }
+    }
 }
 
 static void HandleJoinGroupReq(int _sockfd, const uint8_t* _msg, size_t _len)
 {
-    char group[CHAT_MAX_GROUPNAME_LEN + 1] = {0};
+    char groupName[CHAT_MAX_GROUPNAME_LEN + 1] = {0};
     uint8_t repBuf[CHAT_MAX_MSG_SIZE];
-    size_t repLen = 0;
+    int repLen = 0;
+    ChatStatus status;
+    ChatStatus userStatus;
+    Group* group = NULL;
 
-    chat_decode_groupname(_msg, _len, group);
-    repLen = (size_t)chat_encode_group_rep_ok(repBuf, OP_JOIN_GROUP_REP, "239.1.1.99", 6000);
-    send(_sockfd, repBuf, repLen, 0);
+    if (0 == chat_decode_groupname(_msg, _len, groupName))
+    {
+        printf("  -> Join Group requested: %s\n", groupName);
+
+        status = GroupMng_JoinGroup(g_groupMng, groupName, &group);
+
+        if (ST_OK == status && NULL != group)
+        {
+            userStatus = UserMng_JoinGroup(g_userMng, _sockfd, groupName);
+            if (ST_OK == userStatus)
+            {
+                repLen = chat_encode_group_rep_ok(repBuf, OP_JOIN_GROUP_REP, group->mcast_ip, group->mcast_port);
+            }
+            else
+            {
+                /* Undo the member_count increment — user was already in this group */
+                GroupMng_LeaveGroup(g_groupMng, groupName);
+                status = userStatus;
+                repLen = chat_encode_status_rep(repBuf, OP_JOIN_GROUP_REP, status);
+            }
+        }
+        else
+        {
+            repLen = chat_encode_status_rep(repBuf, OP_JOIN_GROUP_REP, status);
+        }
+        if (repLen > 0)
+        {
+            send(_sockfd, repBuf, (size_t)repLen, 0);
+        }
+    }
 }
 
 static void HandleLeaveGroupReq(int _sockfd, const uint8_t* _msg, size_t _len)
 {
-    char group[CHAT_MAX_GROUPNAME_LEN + 1] = {0};
+    char groupName[CHAT_MAX_GROUPNAME_LEN + 1] = {0};
     uint8_t repBuf[CHAT_MAX_MSG_SIZE];
-    size_t repLen = 0;
+    int repLen = 0;
+    ChatStatus status;
 
-    chat_decode_groupname(_msg, _len, group);
-    repLen = (size_t)chat_encode_status_rep(repBuf, OP_LEAVE_GROUP_REP, ST_OK);
-    send(_sockfd, repBuf, repLen, 0);
+    if (0 == chat_decode_groupname(_msg, _len, groupName))
+    {
+        printf("  -> Leave Group requested: %s\n", groupName);
+
+        status = UserMng_LeaveGroup(g_userMng, _sockfd, groupName);
+
+        if (ST_OK == status)
+        {
+            status = GroupMng_LeaveGroup(g_groupMng, groupName);
+        }
+
+        repLen = chat_encode_status_rep(repBuf, OP_LEAVE_GROUP_REP, status);
+        if (repLen > 0) 
+        { 
+            send(_sockfd, repBuf, (size_t)repLen, 0); 
+        }
+    }
 }

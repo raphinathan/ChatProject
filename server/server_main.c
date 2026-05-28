@@ -32,7 +32,7 @@ int main(void)
     sa.sa_flags = 0;                /* no SA_RESTART: we WANT select() to return EINTR */
     sigaction(SIGINT, &sa, NULL);
 
-    if (1 == ServerMng_Init())
+    if (0 != ServerMng_Init())
     {
         return EXIT_FAILURE;
     }

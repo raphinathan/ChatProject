@@ -1,5 +1,3 @@
-/* server/user_mng.h */
-
 #ifndef USER_MNG_H
 #define USER_MNG_H
 
@@ -23,11 +21,17 @@ ChatStatus UserMng_Register(UserMng* _mng, const char* _username, const char* _p
 
 ChatStatus UserMng_Login(UserMng* _mng, const char* _username, const char* _password, int _sockfd);
 
-ChatStatus UserMng_Logout(UserMng* _mng, int _sockfd);
+/* Callback definition so UserMng can talk to GroupMng without a circular dependency */
+typedef void (*LeaveGroupCallback)(const char* _groupName, void* _ctx);
+
+/* Join/Leave tracking functions */
+ChatStatus UserMng_JoinGroup(UserMng* _mng, int _sockfd, const char* _groupName);
+ChatStatus UserMng_LeaveGroup(UserMng* _mng, int _sockfd, const char* _groupName);
 
 /* * Handles sudden network drops (e.g., SIGPIPE or recv() returning 0). 
  * It implicitly logs the user out. 
  */
-void UserMng_Disconnect(UserMng* _mng, int _sockfd);
+ChatStatus UserMng_Logout(UserMng* _mng, int _sockfd, LeaveGroupCallback _leaveCb, void* _ctx);
+void UserMng_Disconnect(UserMng* _mng, int _sockfd, LeaveGroupCallback _leaveCb, void* _ctx);
 
 #endif /* USER_MNG_H */
