@@ -39,11 +39,14 @@ SERVER_SRC := server/server_main.c \
               server/free_mc_queue.c \
               server/hash_utils.c
 
-# client_groups_mng.c joins in Phase 5 (group windows); not part of auth slice.
 CLIENT_SRC := client/client_main.c \
               client/client_mng.c \
               client/client_net.c \
+              client/client_groups_mng.c \
               client/ui.c
+
+# client_groups_mng uses gen_dlist; link it only into the client binary.
+CLIENT_ADT_SRC := shared/adt/gen_dlist.c
 
 # chat_sender / chat_receiver are standalone UDP tools (no server/client deps).
 SENDER_SRC   := client/chat_sender.c
@@ -60,6 +63,7 @@ PROTOCOL_OBJ := $(call obj,$(PROTOCOL_SRC))
 ADT_OBJ      := $(call obj,$(ADT_SRC))
 SERVER_OBJ   := $(call obj,$(SERVER_SRC))
 CLIENT_OBJ   := $(call obj,$(CLIENT_SRC))
+CLIENT_ADT_OBJ := $(call obj,$(CLIENT_ADT_SRC))
 SENDER_OBJ   := $(call obj,$(SENDER_SRC))
 RECEIVER_OBJ := $(call obj,$(RECEIVER_SRC))
 MOCK_OBJ     := $(call obj,$(MOCK_SRC))
@@ -68,7 +72,7 @@ TEST_OBJ     := $(call obj,$(TEST_SRC))
 # -----------------------------------------------------------------------------
 .PHONY: all clean server client chat_sender chat_receiver mock_server test_protocol
 
-all: server client
+all: server client chat_sender chat_receiver
 
 # short-name aliases
 server:        $(BIN)/server
@@ -82,7 +86,7 @@ $(BIN)/server: $(SERVER_OBJ) $(PROTOCOL_OBJ) $(ADT_OBJ)
 	@mkdir -p $(BIN)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(BIN)/client: $(CLIENT_OBJ) $(PROTOCOL_OBJ)
+$(BIN)/client: $(CLIENT_OBJ) $(PROTOCOL_OBJ) $(CLIENT_ADT_OBJ)
 	@mkdir -p $(BIN)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
