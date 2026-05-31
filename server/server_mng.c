@@ -203,12 +203,31 @@ static void HandleCreateGroupReq(int _sockfd, const uint8_t* _msg, size_t _len)
     {
         printf("  -> Create Group requested: %s\n", groupName);
 
+        if (!UserMng_IsLoggedIn(g_userMng, _sockfd))
+        {
+            repLen = chat_encode_status_rep(repBuf, OP_CREATE_GROUP_REP, ST_ERR_NOT_LOGGED_IN);
+            if (repLen > 0) 
+            { 
+                send(_sockfd, repBuf, (size_t)repLen, 0); 
+            }
+            return;
+        }
+
         status = GroupMng_CreateGroup(g_groupMng, groupName, &newGroup);
 
         if (ST_OK == status && NULL != newGroup)
         {
-            UserMng_JoinGroup(g_userMng, _sockfd, groupName);
-            repLen = chat_encode_group_rep_ok(repBuf, OP_CREATE_GROUP_REP, newGroup->mcast_ip, newGroup->mcast_port);
+            if (ST_OK != UserMng_JoinGroup(g_userMng, _sockfd, groupName))
+            {
+                /* Roll back: count goes to 0, IP is reclaimed */
+                GroupMng_LeaveGroup(g_groupMng, groupName);
+                repLen = chat_encode_status_rep(repBuf, OP_CREATE_GROUP_REP, ST_ERR_SERVER_FULL);
+            }
+            else
+            {
+                repLen = chat_encode_group_rep_ok(repBuf, OP_CREATE_GROUP_REP,
+                                                newGroup->mcast_ip, newGroup->mcast_port);
+            }
         }
         else
         {
@@ -233,6 +252,16 @@ static void HandleJoinGroupReq(int _sockfd, const uint8_t* _msg, size_t _len)
     if (0 == chat_decode_groupname(_msg, _len, groupName))
     {
         printf("  -> Join Group requested: %s\n", groupName);
+
+        if (!UserMng_IsLoggedIn(g_userMng, _sockfd))
+        {
+            repLen = chat_encode_status_rep(repBuf, OP_JOIN_GROUP_REP, ST_ERR_NOT_LOGGED_IN);
+            if (repLen > 0) 
+            { 
+                send(_sockfd, repBuf, (size_t)repLen, 0); 
+            }
+            return;
+        }
 
         status = GroupMng_JoinGroup(g_groupMng, groupName, &group);
 

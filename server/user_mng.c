@@ -224,7 +224,7 @@ ChatStatus UserMng_JoinGroup(UserMng* _mng, int _sockfd, const char* _groupName)
     ListItr itr = NULL;
     ListItr end = NULL;
 
-    if (NULL == _mng || 0 > _sockfd || NULL == _groupName)
+    if (NULL == _mng || 0 > _sockfd || _sockfd >= FD_SETSIZE || NULL == _groupName)
     {
         return ST_ERR_PROTOCOL;
     }
@@ -273,7 +273,7 @@ ChatStatus UserMng_LeaveGroup(UserMng* _mng, int _sockfd, const char* _groupName
     ListItr end = NULL;
     char* currentName = NULL;
 
-    if (NULL == _mng || 0 > _sockfd || NULL == _groupName) 
+    if (NULL == _mng || 0 > _sockfd || _sockfd >= FD_SETSIZE || NULL == _groupName)
     {
         return ST_ERR_PROTOCOL;
     }
@@ -302,6 +302,15 @@ ChatStatus UserMng_LeaveGroup(UserMng* _mng, int _sockfd, const char* _groupName
     return ST_ERR_NOT_IN_GROUP;
 }
 
+int UserMng_IsLoggedIn(const UserMng* _mng, int _sockfd)
+{
+    if (NULL == _mng || 0 > _sockfd || _sockfd >= FD_SETSIZE)
+    {
+        return 0;
+    }
+    return (NULL != _mng->activeSockets[_sockfd]);
+}
+
 /* --- Helper Function Definitions --- */
 
 static void DestroyUserCallback(void* _value)
@@ -312,7 +321,7 @@ static void DestroyUserCallback(void* _value)
     {
         if (NULL != user->joinedGroups)
         {
-            ListDestroy(&(user->joinedGroups), NULL); /* Requires a valid destroy func in Phase 3 */
+            ListDestroy(&(user->joinedGroups), free);
         }
         free(user);
     }

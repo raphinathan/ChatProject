@@ -28,6 +28,8 @@ typedef void (*LeaveGroupCallback)(const char* _groupName, void* _ctx);
 ChatStatus UserMng_JoinGroup(UserMng* _mng, int _sockfd, const char* _groupName);
 ChatStatus UserMng_LeaveGroup(UserMng* _mng, int _sockfd, const char* _groupName);
 
+/* Returns 1 if the socket belongs to a currently logged-in user, 0 otherwise. */
+int UserMng_IsLoggedIn(const UserMng* _mng, int _sockfd);
 /* * Handles sudden network drops (e.g., SIGPIPE or recv() returning 0). 
  * It implicitly logs the user out. 
  */
