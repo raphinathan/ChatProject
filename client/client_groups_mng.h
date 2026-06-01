@@ -22,12 +22,15 @@ void             client_groups_mng_destroy(ClientGroupsMng** pm);
 
 /* Spawn sender + receiver windows for this group via gnome-terminal, then
  * block on msgrcv twice to collect both child PIDs, and store them under
- * group_name. Returns 0 on success, -1 on failure (group not registered).
+ * group_name. The username is passed to the sender so outgoing messages are
+ * tagged with who sent them. Returns 0 on success, -1 on failure (group not
+ * registered).
  *
  * Best-effort: if spawning fails the caller is still considered joined
  * server-side -- the user will see the failure in stderr and can leave. */
 int  client_groups_mng_on_join (ClientGroupsMng* m, const char* group_name,
-                                const char* mcast_ip, uint16_t mcast_port);
+                                const char* mcast_ip, uint16_t mcast_port,
+                                const char* username);
 
 /* SIGTERM both children for this group, then drop the entry. No-op if
  * group_name is not registered (e.g. spawn previously failed). */

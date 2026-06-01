@@ -178,7 +178,8 @@ ChatStatus client_mng_create_group(ClientMng* m, const char* group,
     }
     status = do_group_join(m, OP_CREATE_GROUP_REQ, group, out_ip, out_port);
     if (status == ST_OK) {
-        if (client_groups_mng_on_join(m->groups, group, out_ip, *out_port) != 0) {
+        if (client_groups_mng_on_join(m->groups, group, out_ip, *out_port,
+                                      m->username) != 0) {
             fprintf(stderr, "warning: failed to open chat windows for '%s'\n",
                     group);
         }
@@ -197,7 +198,8 @@ ChatStatus client_mng_join_group(ClientMng* m, const char* group,
     }
     status = do_group_join(m, OP_JOIN_GROUP_REQ, group, out_ip, out_port);
     if (status == ST_OK) {
-        if (client_groups_mng_on_join(m->groups, group, out_ip, *out_port) != 0) {
+        if (client_groups_mng_on_join(m->groups, group, out_ip, *out_port,
+                                      m->username) != 0) {
             fprintf(stderr, "warning: failed to open chat windows for '%s'\n",
                     group);
         }

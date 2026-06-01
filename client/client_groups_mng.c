@@ -126,7 +126,8 @@ void client_groups_mng_destroy(ClientGroupsMng** pm)
 
 /* ------------------------------------------------------------------------- */
 int client_groups_mng_on_join(ClientGroupsMng* m, const char* group_name,
-                              const char* mcast_ip, uint16_t mcast_port)
+                              const char* mcast_ip, uint16_t mcast_port,
+                              const char* username)
 {
     GroupEntry* e;
     char        cmd[256];
@@ -134,16 +135,20 @@ int client_groups_mng_on_join(ClientGroupsMng* m, const char* group_name,
     if (!m || !group_name || !mcast_ip) {
         return -1;
     }
+    if (!username) {
+        username = "";
+    }
     if (find_entry(m->groups, group_name) != ListItrEnd(m->groups)) {
         /* Already tracked locally -- shouldn't happen (server rejects). */
         return -1;
     }
 
     /* Spawn the two windows. gnome-terminal forks into the background, so
-     * system() returns once the launch is dispatched and we can msgrcv. */
+     * system() returns once the launch is dispatched and we can msgrcv.
+     * The sender gets the username so it can tag outgoing messages. */
     snprintf(cmd, sizeof(cmd),
-             "gnome-terminal -- ./bin/chat_sender %s %u %d &",
-             mcast_ip, (unsigned)mcast_port, m->msqid);
+             "gnome-terminal -- ./bin/chat_sender %s %u %d '%s' &",
+             mcast_ip, (unsigned)mcast_port, m->msqid, username);
     if (system(cmd) != 0) {
         fprintf(stderr, "client_groups_mng: failed to spawn chat_sender\n");
         return -1;
