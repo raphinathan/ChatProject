@@ -1,11 +1,11 @@
 #include "server_mng.h"
+#include "server_net.h"
 #include "user_mng.h"
 #include "free_mc_queue.h"
 #include "group_mng.h"
 #include "../shared/protocol.h"
 
 #include <stdio.h>
-#include <sys/socket.h>
 
 /* Global singleton for the Management layer state */
 static UserMng* g_userMng = NULL;
@@ -109,9 +109,10 @@ int ServerMng_HandleMessage(int _sockfd, const uint8_t* _msg, size_t _len, void*
                 
                 repLen = chat_encode_status_rep(repBuf, OP_LOGOUT_REP, status);
                 if (repLen > 0) 
-                {
-                    send(_sockfd, repBuf, (size_t)repLen, 0);
+                { 
+                    ServerNet_SendMessage(_sockfd, repBuf, (size_t)repLen); 
                 }
+
             }
             break;
             
@@ -165,8 +166,9 @@ static void HandleRegisterReq(int _sockfd, const uint8_t* _msg, size_t _len)
         repLen = chat_encode_status_rep(repBuf, OP_REG_REP, status);
         if (repLen > 0) 
         { 
-            send(_sockfd, repBuf, (size_t)repLen, 0); 
+            ServerNet_SendMessage(_sockfd, repBuf, (size_t)repLen); 
         }
+
     }
 }
 
@@ -186,8 +188,9 @@ static void HandleLoginReq(int _sockfd, const uint8_t* _msg, size_t _len)
         repLen = chat_encode_status_rep(repBuf, OP_LOGIN_REP, status);
         if (repLen > 0) 
         { 
-            send(_sockfd, repBuf, (size_t)repLen, 0); 
+            ServerNet_SendMessage(_sockfd, repBuf, (size_t)repLen); 
         }
+
     }
 }
 
@@ -208,8 +211,9 @@ static void HandleCreateGroupReq(int _sockfd, const uint8_t* _msg, size_t _len)
             repLen = chat_encode_status_rep(repBuf, OP_CREATE_GROUP_REP, ST_ERR_NOT_LOGGED_IN);
             if (repLen > 0) 
             { 
-                send(_sockfd, repBuf, (size_t)repLen, 0); 
+                ServerNet_SendMessage(_sockfd, repBuf, (size_t)repLen); 
             }
+
             return;
         }
 
@@ -235,8 +239,9 @@ static void HandleCreateGroupReq(int _sockfd, const uint8_t* _msg, size_t _len)
         }
         if (repLen > 0) 
         { 
-            send(_sockfd, repBuf, (size_t)repLen, 0); 
+            ServerNet_SendMessage(_sockfd, repBuf, (size_t)repLen); 
         }
+
     }
 }
 
@@ -258,8 +263,9 @@ static void HandleJoinGroupReq(int _sockfd, const uint8_t* _msg, size_t _len)
             repLen = chat_encode_status_rep(repBuf, OP_JOIN_GROUP_REP, ST_ERR_NOT_LOGGED_IN);
             if (repLen > 0) 
             { 
-                send(_sockfd, repBuf, (size_t)repLen, 0); 
+                ServerNet_SendMessage(_sockfd, repBuf, (size_t)repLen); 
             }
+
             return;
         }
 
@@ -284,10 +290,11 @@ static void HandleJoinGroupReq(int _sockfd, const uint8_t* _msg, size_t _len)
         {
             repLen = chat_encode_status_rep(repBuf, OP_JOIN_GROUP_REP, status);
         }
-        if (repLen > 0)
-        {
-            send(_sockfd, repBuf, (size_t)repLen, 0);
+        if (repLen > 0) 
+        { 
+            ServerNet_SendMessage(_sockfd, repBuf, (size_t)repLen); 
         }
+
     }
 }
 
@@ -312,7 +319,8 @@ static void HandleLeaveGroupReq(int _sockfd, const uint8_t* _msg, size_t _len)
         repLen = chat_encode_status_rep(repBuf, OP_LEAVE_GROUP_REP, status);
         if (repLen > 0) 
         { 
-            send(_sockfd, repBuf, (size_t)repLen, 0); 
+            ServerNet_SendMessage(_sockfd, repBuf, (size_t)repLen); 
         }
+
     }
 }

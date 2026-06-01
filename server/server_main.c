@@ -27,20 +27,32 @@ int main(void)
      * ServerNet_Run to eventually exit gracefully. */
     struct sigaction sa;
     int exit_code;
+    ServerNet* net = NULL;
     sa.sa_handler = SigIntHandler;
     sigemptyset(&sa.sa_mask);       /* don't block any other signals during handler */
     sa.sa_flags = 0;                /* no SA_RESTART: we WANT select() to return EINTR */
     sigaction(SIGINT, &sa, NULL);
 
-    if (0 != ServerMng_Init())
-    {
+    /* Blocks here until ServerNet_Run returns (which happens if select() fails, 
+     * or if we modified ServerNet_Run to check g_keepRunning). */
+    if (0 != ServerMng_Init()) 
+    { 
         return EXIT_FAILURE;
     }
 
-    /* Blocks here until ServerNet_Run returns (which happens if select() fails, 
-     * or if we modified ServerNet_Run to check g_keepRunning). */
-    exit_code = ServerNet_Run(CHAT_TCP_PORT, ServerMng_HandleMessage, ServerMng_OnDisconnect,
-              NULL, &g_keepRunning);
+    net = ServerNet_Create(CHAT_TCP_PORT, ServerMng_HandleMessage,
+                        ServerMng_OnDisconnect, NULL);
+    if (NULL == net)
+    {
+        ServerMng_Destroy();
+        return EXIT_FAILURE;
+    }
+
+    exit_code = ServerNet_Run(net, &g_keepRunning);
+
+    ServerMng_Destroy();
+    ServerNet_Destroy(&net);
+
     if (exit_code != 0) 
     {
         fprintf(stderr, "network loop exited with error\n");

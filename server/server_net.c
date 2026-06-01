@@ -12,6 +12,7 @@
 #include <arpa/inet.h>
 #include <sys/select.h>
 
+
 /* FD_SETSIZE is defined by the OS (usually 1024). It is the maximum number 
  * of file descriptors that select() can monitor simultaneously. */
 #define MAX_CLIENTS FD_SETSIZE
@@ -29,6 +30,17 @@ typedef struct
     size_t len; /* Tracks exactly how many unparsed bytes are currently in the buffer */
 } ClientState;
 
+struct ServerNet
+{
+    int            listenFd;
+    int            maxFd;
+    fd_set         masterSet;
+    ClientState    clients[MAX_CLIENTS];
+    OnMessageFn    onMsg;
+    OnDisconnectFn onDisc;
+    void*          ctx;
+};
+
 /* --- Helper Function Declarations --- */
 
 static int SetupListeningSocket(uint16_t _port);
@@ -37,77 +49,119 @@ static void HandleClientData(ClientState* _client, fd_set* _masterSet, OnMessage
 static void ProcessBuffer(ClientState* _client, OnMessageFn _onMsg, void* _ctx);
 
 /* --- Main Functions --- */
-
-int ServerNet_Run(uint16_t _port, OnMessageFn _onMsg, OnDisconnectFn _onDisc,
-                  void* _ctx, const volatile sig_atomic_t* _keepRunning)
+ServerNet* ServerNet_Create(uint16_t _port, OnMessageFn _onMsg,
+                            OnDisconnectFn _onDisc, void* _ctx)
 {
-    int listenFd = -1;
-    int maxFd = 0;
+    ServerNet* net = NULL;
     int i = 0;
-    int cleanExit = 1;
-    
-    /* fd_set is a bit-array used by select() to know which sockets to monitor. */
-    fd_set masterSet; 
-    fd_set readSet;
-    static ClientState clients[MAX_CLIENTS];
 
-    /* Initialize all client slots to -1 (empty) */
+    net = (ServerNet*)malloc(sizeof(ServerNet));
+    if (NULL == net) 
+    { 
+        return NULL; 
+    }
+
+    net->onMsg  = _onMsg;
+    net->onDisc = _onDisc;
+    net->ctx    = _ctx;
+
     for (i = 0; i < MAX_CLIENTS; ++i)
     {
-        clients[i].fd = -1;
-        clients[i].len = 0;
+        net->clients[i].fd  = -1;
+        net->clients[i].len = 0;
     }
 
-    listenFd = SetupListeningSocket(_port);
-    if (-1 == listenFd)
+    net->listenFd = SetupListeningSocket(_port);
+    if (-1 == net->listenFd)
     {
-        return -1;
+        free(net);
+        return NULL;
     }
 
-    /* Clear the master set and add our listening socket to it. */
-    FD_ZERO(&masterSet);
-    FD_SET(listenFd, &masterSet);
-    maxFd = listenFd; /* select() needs the highest FD number to know where to stop iterating */
+    FD_ZERO(&net->masterSet);
+    FD_SET(net->listenFd, &net->masterSet);
+    net->maxFd = net->listenFd;
 
     printf("Server listening on port %d...\n", _port);
+    return net;
+}
+
+
+int ServerNet_Run(ServerNet* _net, const volatile sig_atomic_t* _keepRunning)
+{
+    fd_set readSet;
+    int i = 0;
+    int cleanExit = 1;
+
+    if (NULL == _net || NULL == _keepRunning) 
+    { 
+        return -1; 
+    }
 
     while (*_keepRunning)
     {
-        /* select() modifies the set passed into it. We must pass a copy (readSet)
-         * so we don't lose our master list of connected clients. */
-        readSet = masterSet;
+        readSet = _net->masterSet;
 
-        /* Blocks until at least one FD in readSet is ready for reading */
-        if (-1 == select(maxFd + 1, &readSet, NULL, NULL, NULL))
+        if (-1 == select(_net->maxFd + 1, &readSet, NULL, NULL, NULL))
         {
-            if (errno == EINTR)
-            {
-                continue; /* signal fired — re-check *_keepRunning at top of loop */
+            if (errno == EINTR) 
+            { 
+                continue; 
             }
             perror("select failed");
             cleanExit = 0;
             break;
         }
 
-        /* 1. If the listening socket is readable, a new client is trying to connect. */
-        if (FD_ISSET(listenFd, &readSet))
+        if (FD_ISSET(_net->listenFd, &readSet))
         {
-            HandleNewConnection(listenFd, clients, &maxFd, &masterSet);
+            HandleNewConnection(_net->listenFd, _net->clients,
+                                &_net->maxFd, &_net->masterSet);
         }
 
-        /* 2. Check all existing client sockets to see if they sent data. */
         for (i = 0; i < MAX_CLIENTS; ++i)
         {
-            if (-1 != clients[i].fd && FD_ISSET(clients[i].fd, &readSet))
+            if (-1 != _net->clients[i].fd &&
+                FD_ISSET(_net->clients[i].fd, &readSet))
             {
-                HandleClientData(&clients[i], &masterSet, _onMsg, _onDisc, _ctx);
+                HandleClientData(&_net->clients[i], &_net->masterSet,
+                                 _net->onMsg, _net->onDisc, _net->ctx);
             }
         }
     }
 
-    close(listenFd);
     return cleanExit ? 0 : -1;
+}
 
+int ServerNet_SendMessage(int _sockfd, const uint8_t* _buf, size_t _len)
+{
+    if (0 > _sockfd || NULL == _buf || 0 == _len) 
+    { 
+        return -1; 
+    }
+    return (int)send(_sockfd, _buf, _len, 0);
+}
+
+void ServerNet_Destroy(ServerNet** _net)
+{
+    int i = 0;
+
+    if (NULL == _net || NULL == *_net) 
+    { 
+        return; 
+    }
+
+    for (i = 0; i < MAX_CLIENTS; ++i)
+    {
+        if (-1 != (*_net)->clients[i].fd)
+        {
+            close((*_net)->clients[i].fd);
+        }
+    }
+
+    close((*_net)->listenFd);
+    free(*_net);
+    *_net = NULL;
 }
 
 /* --- Helper Function Definitions --- */
