@@ -147,15 +147,17 @@ int client_groups_mng_on_join(ClientGroupsMng* m, const char* group_name,
      * system() returns once the launch is dispatched and we can msgrcv.
      * The sender gets the username so it can tag outgoing messages. */
     snprintf(cmd, sizeof(cmd),
-             "gnome-terminal -- ./bin/chat_sender %s %u %d '%s' &",
-             mcast_ip, (unsigned)mcast_port, m->msqid, username);
+             "gnome-terminal --title='%s (sender)' "
+             "-- ./bin/chat_sender %s %u %d '%s' &",
+             group_name, mcast_ip, (unsigned)mcast_port, m->msqid, username);
     if (system(cmd) != 0) {
         fprintf(stderr, "client_groups_mng: failed to spawn chat_sender\n");
         return -1;
     }
     snprintf(cmd, sizeof(cmd),
-             "gnome-terminal -- ./bin/chat_receiver %s %u %d &",
-             mcast_ip, (unsigned)mcast_port, m->msqid);
+             "gnome-terminal --title='%s (receiver)' "
+             "-- ./bin/chat_receiver %s %u %d '%s' &",
+             group_name, mcast_ip, (unsigned)mcast_port, m->msqid, group_name);
     if (system(cmd) != 0) {
         fprintf(stderr, "client_groups_mng: failed to spawn chat_receiver\n");
         return -1;
