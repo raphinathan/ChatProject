@@ -28,6 +28,33 @@
 
 #define MAX_LINE 1024
 #define MAX_NAME 33  /* CHAT_MAX_USERNAME_LEN (32) + 1 */
+/* Return the IP of the interface the kernel would use to reach the internet.
+ * Uses a UDP connect() to probe routing without sending any traffic. Falls
+ * back to INADDR_ANY on failure (kernel picks, may be loopback). */
+static in_addr_t lan_ip(void)
+{
+    int                tmp;
+    struct sockaddr_in dst, local;
+    socklen_t          len = sizeof(local);
+
+    tmp = socket(AF_INET, SOCK_DGRAM, 0);
+    if (tmp < 0) return htonl(INADDR_ANY);
+
+    memset(&dst, 0, sizeof(dst));
+    dst.sin_family = AF_INET;
+    dst.sin_port   = htons(53);
+    inet_pton(AF_INET, "8.8.8.8", &dst.sin_addr);
+
+    if (connect(tmp, (struct sockaddr*)&dst, sizeof(dst)) < 0 ||
+        getsockname(tmp, (struct sockaddr*)&local, &len) < 0) {
+        close(tmp);
+        return htonl(INADDR_ANY);
+    }
+    close(tmp);
+    return local.sin_addr.s_addr;
+}
+
+
 
 int main(int argc, char* argv[])
 {
@@ -40,6 +67,7 @@ int main(int argc, char* argv[])
     unsigned char      ttl = 1;
     char               line[MAX_LINE];
     char               out[MAX_NAME + 2 + MAX_LINE]; /* "<name>: " + line */
+    struct in_addr iface;
 
     if (argc < 3 || argc > 5) {
         fprintf(stderr, "usage: %s <mcast_ip> <port> [msqid] [username]\n",
@@ -71,6 +99,15 @@ int main(int argc, char* argv[])
         close(sockfd);
         return 1;
     }
+
+    iface.s_addr = lan_ip();
+    if (setsockopt(sockfd, IPPROTO_IP, IP_MULTICAST_IF,
+                   &iface, sizeof(iface)) < 0) {
+        perror("setsockopt IP_MULTICAST_IF");
+        close(sockfd);
+        return 1;
+    }
+
 
     memset(&dst, 0, sizeof(dst));
     dst.sin_family = AF_INET;
